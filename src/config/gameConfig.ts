@@ -76,14 +76,14 @@ export const gameConfig: GameConfig = {
   ],
 
   gifts: [
-    { id: 'flower', name: '鲜花', price: 30, icon: '🌹', description: '一束美丽的鲜花' },
-    { id: 'book', name: '小说', price: 25, icon: '📚', description: '一本畅销小说' },
-    { id: 'tea', name: '茶叶', price: 40, icon: '🍵', description: '上等的茶叶礼盒' },
-    { id: 'coffee', name: '咖啡豆', price: 35, icon: '☕', description: '精品咖啡豆' },
-    { id: 'dessert', name: '甜点', price: 20, icon: '🍰', description: '精致的手工甜点' },
-    { id: 'game_console', name: '游戏机', price: 80, icon: '🎮', description: '最新款掌上游戏机' },
-    { id: 'alcohol', name: '红酒', price: 60, icon: '🍷', description: '一瓶高档红酒' },
-    { id: 'music_box', name: '音乐盒', price: 50, icon: '🎵', description: '精致的八音盒' }
+    { id: 'flower', name: '鲜花', price: 30, icon: '🌹', description: '一束美丽的鲜花', category: 'nature' },
+    { id: 'book', name: '小说', price: 25, icon: '📚', description: '一本畅销小说', category: 'culture' },
+    { id: 'tea', name: '茶叶', price: 40, icon: '🍵', description: '上等的茶叶礼盒', category: 'culture' },
+    { id: 'coffee', name: '咖啡豆', price: 35, icon: '☕', description: '精品咖啡豆', category: 'food' },
+    { id: 'dessert', name: '甜点', price: 20, icon: '🍰', description: '精致的手工甜点', category: 'food' },
+    { id: 'game_console', name: '游戏机', price: 80, icon: '🎮', description: '最新款掌上游戏机', category: 'entertainment' },
+    { id: 'alcohol', name: '红酒', price: 60, icon: '🍷', description: '一瓶高档红酒', category: 'drink' },
+    { id: 'music_box', name: '音乐盒', price: 50, icon: '🎵', description: '精致的八音盒', category: 'culture' }
   ],
 
   cards: [

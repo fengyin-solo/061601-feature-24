@@ -28,6 +28,32 @@ export interface GiftConfig {
   price: number
   icon: string
   description: string
+  category?: string
+}
+
+export interface GiftHistoryEntry {
+  day: number
+  time: TimeOfDay
+  characterId: string
+  giftId: string
+  affinityBefore: number
+  affinityAfter: number
+  moodBefore: number
+  moodAfter: number
+}
+
+export interface GiftTrendPoint {
+  day: number
+  affinity: number
+  delta: number
+  giftName: string
+}
+
+export interface PreferenceHint {
+  giftId: string
+  hint: string
+  confidence: 'high' | 'medium' | 'low'
+  icon: string
 }
 
 export interface CardConfig {

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { TimeOfDay, ActionType, GameEventConfig, EventChoice } from '../types/game'
+import type { TimeOfDay, ActionType, GameEventConfig, EventChoice, GiftHistoryEntry } from '../types/game'
 import gameConfig from '../config/gameConfig'
 import {
   clamp,
@@ -67,6 +67,7 @@ export const useGameStore = defineStore('game', () => {
   const collectedCards = ref<string[]>([])
   const logs = ref<LogEntry[]>([])
   const history = ref<HistorySnapshot[]>([])
+  const giftHistory = ref<GiftHistoryEntry[]>([])
   let logIdCounter = 0
 
   const unlockedCharacters = computed(() =>
@@ -274,6 +275,9 @@ export const useGameStore = defineStore('game', () => {
       return false
     }
 
+    const affinityBefore = charState.affinity
+    const moodBefore = charState.mood
+
     resources.value -= giftConfig.price
 
     const affinityChange = calculateGiftAffinity(
@@ -288,6 +292,17 @@ export const useGameStore = defineStore('game', () => {
       characterId,
       isGiftLiked(giftId, charConfig) ? 15 : isGiftDisliked(giftId, charConfig) ? -10 : 5
     )
+
+    giftHistory.value.push({
+      day: day.value,
+      time: timeSlot.value,
+      characterId,
+      giftId,
+      affinityBefore,
+      affinityAfter: charState.affinity,
+      moodBefore,
+      moodAfter: charState.mood
+    })
 
     const characterName = charConfig.name
     let message = `送给 ${characterName} 一份「${giftConfig.name}」`
@@ -439,6 +454,7 @@ export const useGameStore = defineStore('game', () => {
     collectedCards.value = []
     logs.value = []
     history.value = []
+    giftHistory.value = []
     logIdCounter = 0
 
     addLog('system', '🎮 游戏开始！欢迎来到恋爱物语')
@@ -467,6 +483,7 @@ export const useGameStore = defineStore('game', () => {
     collectedCards,
     logs,
     history,
+    giftHistory,
     currentEvent,
     showEventModal,
     darkMode,

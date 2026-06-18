@@ -1,4 +1,4 @@
-import type { TimeOfDay, MoodLevel, GameConfig, CharacterConfig } from '../types/game'
+import type { TimeOfDay, MoodLevel, GameConfig, CharacterConfig, GiftHistoryEntry, GiftTrendPoint, PreferenceHint } from '../types/game'
 
 export function getMoodLevel(mood: number): MoodLevel {
   if (mood >= 80) return 'happy'
@@ -155,4 +155,191 @@ export function calculateGiftAffinity(
   baseChange *= moodMultiplier
 
   return Math.round(baseChange * 10) / 10
+}
+
+const giftCategoryMap: Record<string, string> = {
+  flower: 'nature',
+  book: 'culture',
+  tea: 'culture',
+  coffee: 'food',
+  dessert: 'food',
+  game_console: 'entertainment',
+  alcohol: 'drink',
+  music_box: 'culture'
+}
+
+const topicCategoryMap: Record<string, string[]> = {
+  '文学': ['culture'],
+  '花草': ['nature'],
+  '天气': ['nature'],
+  '游戏': ['entertainment'],
+  '运动': ['entertainment'],
+  '美食': ['food'],
+  '音乐': ['culture']
+}
+
+export function getGiftCategory(giftId: string): string {
+  return giftCategoryMap[giftId] || 'other'
+}
+
+export function generatePreferenceHints(character: CharacterConfig): PreferenceHint[] {
+  const hints: PreferenceHint[] = []
+
+  const topicCategories = new Set<string>()
+  character.chatTopics
+    .filter(t => t.affinity >= 2)
+    .forEach(t => {
+      const cats = topicCategoryMap[t.topic] || []
+      cats.forEach(c => topicCategories.add(c))
+    })
+
+  const dislikeCategories = new Set<string>()
+  character.chatTopics
+    .filter(t => t.affinity <= -1)
+    .forEach(t => {
+      const cats = topicCategoryMap[t.topic] || []
+      cats.forEach(c => dislikeCategories.add(c))
+    })
+
+  const topTopics = character.chatTopics
+    .filter(t => t.affinity >= 2)
+    .map(t => t.topic)
+
+  const hintTemplates: Record<string, { positive: string[]; negative: string[] }> = {
+    nature: {
+      positive: ['似乎对自然相关的事物很有好感', '好像喜欢花草自然类的礼物'],
+      negative: ['对自然类的东西不太感冒']
+    },
+    culture: {
+      positive: ['看起来偏爱文艺类的东西', '似乎对文化艺术情有独钟'],
+      negative: ['对文艺类的东西兴致平平']
+    },
+    food: {
+      positive: ['似乎对美食毫无抵抗力', '好像很喜欢吃的喝的'],
+      negative: ['对食物不太执着']
+    },
+    entertainment: {
+      positive: ['看起来很享受娱乐活动', '似乎对游戏类很感兴趣'],
+      negative: ['对娱乐类不太感兴趣']
+    },
+    drink: {
+      positive: ['似乎不排斥品饮类礼物'],
+      negative: ['对酒类饮品似乎不太喜欢']
+    }
+  }
+
+  const allGifts = [
+    { id: 'flower', cat: 'nature' },
+    { id: 'book', cat: 'culture' },
+    { id: 'tea', cat: 'culture' },
+    { id: 'coffee', cat: 'food' },
+    { id: 'dessert', cat: 'food' },
+    { id: 'game_console', cat: 'entertainment' },
+    { id: 'alcohol', cat: 'drink' },
+    { id: 'music_box', cat: 'culture' }
+  ]
+
+  allGifts.forEach(gift => {
+    const cat = gift.cat
+    const templates = hintTemplates[cat]
+    if (!templates) return
+
+    let hint = ''
+    let confidence: 'high' | 'medium' | 'low' = 'low'
+    let icon = '💭'
+
+    if (topicCategories.has(cat)) {
+      const pool = templates.positive
+      hint = pool[Math.floor(Math.random() * pool.length)]
+      confidence = 'medium'
+      icon = '👍'
+    } else if (dislikeCategories.has(cat)) {
+      const pool = templates.negative
+      hint = pool[Math.floor(Math.random() * pool.length)]
+      confidence = 'medium'
+      icon = '⚠️'
+    } else {
+      hint = '暂时看不出偏好'
+      confidence = 'low'
+      icon = '❓'
+    }
+
+    if (isGiftLiked(gift.id, character)) {
+      if (topTopics.length > 0) {
+        hint = `听说ta对${topTopics[0]}很感兴趣，这类礼物或许不错`
+      }
+      confidence = 'high'
+      icon = '💡'
+    } else if (isGiftDisliked(gift.id, character)) {
+      hint = '感觉ta可能不太喜欢这类东西...'
+      confidence = 'high'
+      icon = '🚫'
+    }
+
+    hints.push({
+      giftId: gift.id,
+      hint,
+      confidence,
+      icon
+    })
+  })
+
+  return hints
+}
+
+export function calculateGiftTrend(
+  history: GiftHistoryEntry[],
+  characterId: string
+): GiftTrendPoint[] {
+  return history
+    .filter(h => h.characterId === characterId)
+    .map(h => ({
+      day: h.day,
+      affinity: h.affinityAfter,
+      delta: Math.round((h.affinityAfter - h.affinityBefore) * 10) / 10,
+      giftName: ''
+    }))
+}
+
+export function getBudgetWarning(
+  currentResources: number,
+  giftPrice: number,
+  avgDailyIncome: number
+): { level: 'safe' | 'caution' | 'danger'; message: string } | null {
+  const remaining = currentResources - giftPrice
+  if (remaining < 0) return null
+
+  if (remaining === 0) {
+    return {
+      level: 'danger',
+      message: '送出后将花光所有代币，无法进行其他消费！'
+    }
+  }
+  if (remaining < avgDailyIncome * 0.5) {
+    return {
+      level: 'caution',
+      message: `送出后仅剩 ${remaining} 代币，建议预留部分预算`
+    }
+  }
+  if (remaining < avgDailyIncome) {
+    return {
+      level: 'safe',
+      message: `送出后剩余 ${remaining} 代币，预算尚可`
+    }
+  }
+  return null
+}
+
+export function getAffinityTrendLabel(history: GiftHistoryEntry[], characterId: string): string {
+  const charHistory = history.filter(h => h.characterId === characterId)
+  if (charHistory.length === 0) return '暂无送礼记录'
+
+  const recent = charHistory.slice(-3)
+  const avgDelta = recent.reduce((sum, h) => sum + (h.affinityAfter - h.affinityBefore), 0) / recent.length
+
+  if (avgDelta >= 5) return '🔥 好感飙升中！'
+  if (avgDelta >= 2) return '😊 好感稳步上升'
+  if (avgDelta >= 0) return '😐 好感变化不大'
+  if (avgDelta >= -2) return '😟 好感略有下降'
+  return '😢 好感急剧下降！'
 }

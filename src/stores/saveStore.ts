@@ -58,6 +58,7 @@ export const useSaveStore = defineStore('save', () => {
       collectedCards: gameStore.collectedCards,
       logs: gameStore.logs,
       history: gameStore.history,
+      giftHistory: gameStore.giftHistory,
       darkMode: gameStore.darkMode
     }
     return JSON.stringify(state)
@@ -77,6 +78,7 @@ export const useSaveStore = defineStore('save', () => {
       gameStore.collectedCards = state.collectedCards
       gameStore.logs = state.logs
       gameStore.history = state.history
+      gameStore.giftHistory = state.giftHistory || []
       gameStore.darkMode = state.darkMode
       return true
     } catch (e) {

@@ -2,7 +2,15 @@
 import { ref, computed } from 'vue'
 import { useGameStore } from '../stores/gameStore'
 import gameConfig from '../config/gameConfig'
-import { isGiftLiked, isGiftDisliked } from '../utils/gameUtils'
+import type { PreferenceHint } from '../types/game'
+import {
+  isGiftLiked,
+  isGiftDisliked,
+  generatePreferenceHints,
+  getBudgetWarning,
+  calculateGiftTrend,
+  getAffinityTrendLabel
+} from '../utils/gameUtils'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -10,8 +18,18 @@ const emit = defineEmits<{
 
 const gameStore = useGameStore()
 const selectedGiftId = ref<string | null>(null)
+const showTrendPanel = ref(false)
 
 const currentCharacterConfig = computed(() => gameStore.currentCharacterConfig)
+
+const preferenceHints = computed<PreferenceHint[]>(() => {
+  if (!currentCharacterConfig.value) return []
+  return generatePreferenceHints(currentCharacterConfig.value)
+})
+
+function getHintForGift(giftId: string): PreferenceHint | undefined {
+  return preferenceHints.value.find(h => h.giftId === giftId)
+}
 
 const canAfford = computed(() => {
   if (!selectedGiftId.value) return false
@@ -19,24 +37,64 @@ const canAfford = computed(() => {
   return gift ? gameStore.resources >= gift.price : false
 })
 
-function getGiftStatus(giftId: string): string {
-  if (!currentCharacterConfig.value) return ''
-  if (isGiftLiked(giftId, currentCharacterConfig.value)) return '喜欢'
-  if (isGiftDisliked(giftId, currentCharacterConfig.value)) return '讨厌'
-  return '普通'
+const budgetWarning = computed(() => {
+  if (!selectedGiftId.value) return null
+  const gift = gameConfig.gifts.find(g => g.id === selectedGiftId.value)
+  if (!gift) return null
+  const avgDaily = (gameConfig.workRewards.min + gameConfig.workRewards.max) / 2
+  return getBudgetWarning(gameStore.resources, gift.price, avgDaily)
+})
+
+const remainingAfterGift = computed(() => {
+  if (!selectedGiftId.value) return gameStore.resources
+  const gift = gameConfig.gifts.find(g => g.id === selectedGiftId.value)
+  return gift ? gameStore.resources - gift.price : gameStore.resources
+})
+
+const todayGiftSpent = computed(() => {
+  const todayEntries = gameStore.giftHistory.filter(
+    h => h.day === gameStore.day && h.characterId === gameStore.selectedCharacterId
+  )
+  return todayEntries.reduce((sum, h) => {
+    const gift = gameConfig.gifts.find(g => g.id === h.giftId)
+    return sum + (gift?.price || 0)
+  }, 0)
+})
+
+const giftTrend = computed(() => {
+  if (!gameStore.selectedCharacterId) return []
+  return calculateGiftTrend(gameStore.giftHistory, gameStore.selectedCharacterId)
+})
+
+const trendLabel = computed(() => {
+  if (!gameStore.selectedCharacterId) return ''
+  return getAffinityTrendLabel(gameStore.giftHistory, gameStore.selectedCharacterId)
+})
+
+const charGiftHistory = computed(() => {
+  if (!gameStore.selectedCharacterId) return []
+  return gameStore.giftHistory
+    .filter(h => h.characterId === gameStore.selectedCharacterId)
+    .slice(-5)
+    .reverse()
+})
+
+function getConfidenceClass(confidence: string): string {
+  if (confidence === 'high') return 'confidence-high'
+  if (confidence === 'medium') return 'confidence-medium'
+  return 'confidence-low'
 }
 
-function getGiftStatusClass(giftId: string): string {
-  if (!currentCharacterConfig.value) return ''
-  if (isGiftLiked(giftId, currentCharacterConfig.value)) return 'status-liked'
-  if (isGiftDisliked(giftId, currentCharacterConfig.value)) return 'status-disliked'
-  return 'status-normal'
+function getTrendBarWidth(delta: number): string {
+  const maxDelta = 15
+  const pct = Math.min(Math.abs(delta) / maxDelta * 100, 100)
+  return `${pct}%`
 }
 
 function sendGift() {
   if (!selectedGiftId.value || !gameStore.selectedCharacterId) return
   gameStore.performAction('gift', gameStore.selectedCharacterId, selectedGiftId.value)
-  emit('close')
+  showTrendPanel.value = true
 }
 </script>
 
@@ -53,41 +111,115 @@ function sendGift() {
           请先选择一个角色
         </div>
 
-        <div v-else class="gift-target">
-          <span class="target-avatar">{{ currentCharacterConfig.avatar }}</span>
-          <span class="target-name">送给 {{ currentCharacterConfig.name }}</span>
-        </div>
+        <template v-else>
+          <div class="gift-target">
+            <span class="target-avatar">{{ currentCharacterConfig.avatar }}</span>
+            <span class="target-name">送给 {{ currentCharacterConfig.name }}</span>
+            <button
+              v-if="giftTrend.length > 0"
+              class="trend-toggle"
+              @click="showTrendPanel = !showTrendPanel"
+            >
+              📈 趋势
+            </button>
+          </div>
 
-        <div class="gift-grid">
-          <div
-            v-for="gift in gameConfig.gifts"
-            :key="gift.id"
-            class="gift-item"
-            :class="{ selected: selectedGiftId === gift.id, disabled: gameStore.resources < gift.price }"
-            @click="gameStore.resources >= gift.price && (selectedGiftId = gift.id)"
-          >
-            <div class="gift-icon">{{ gift.icon }}</div>
-            <div class="gift-info">
-              <span class="gift-name">{{ gift.name }}</span>
-              <span class="gift-desc">{{ gift.description }}</span>
+          <div v-if="showTrendPanel && giftTrend.length > 0" class="trend-panel animate-fade-in">
+            <div class="trend-header">
+              <span class="trend-label">{{ trendLabel }}</span>
+              <span class="trend-count">共送礼 {{ giftTrend.length }} 次</span>
             </div>
-            <div class="gift-meta">
-              <span class="gift-price">💰 {{ gift.price }}</span>
-              <span class="gift-status" :class="getGiftStatusClass(gift.id)">
-                {{ getGiftStatus(gift.id) }}
-              </span>
+
+            <div class="trend-chart">
+              <div
+                v-for="(point, idx) in giftTrend.slice(-8)"
+                :key="idx"
+                class="trend-bar-group"
+              >
+                <div class="trend-bar-wrapper">
+                  <div
+                    v-if="point.delta >= 0"
+                    class="trend-bar positive"
+                    :style="{ height: getTrendBarWidth(point.delta) }"
+                  ></div>
+                  <div
+                    v-else
+                    class="trend-bar negative"
+                    :style="{ height: getTrendBarWidth(point.delta) }"
+                  ></div>
+                </div>
+                <span class="trend-bar-day">D{{ point.day }}</span>
+              </div>
+            </div>
+
+            <div v-if="charGiftHistory.length > 0" class="trend-history">
+              <div
+                v-for="(entry, idx) in charGiftHistory"
+                :key="idx"
+                class="trend-history-item"
+              >
+                <span class="history-day">第{{ entry.day }}天</span>
+                <span
+                  class="history-delta"
+                  :class="entry.affinityAfter > entry.affinityBefore ? 'positive' : 'negative'"
+                >
+                  {{ entry.affinityAfter > entry.affinityBefore ? '+' : '' }}{{
+                    Math.round((entry.affinityAfter - entry.affinityBefore) * 10) / 10
+                  }}
+                </span>
+                <span class="history-affinity">好感 {{ entry.affinityAfter }}</span>
+              </div>
             </div>
           </div>
-        </div>
+
+          <div class="gift-grid">
+            <div
+              v-for="gift in gameConfig.gifts"
+              :key="gift.id"
+              class="gift-item"
+              :class="{ selected: selectedGiftId === gift.id, disabled: gameStore.resources < gift.price }"
+              @click="gameStore.resources >= gift.price && (selectedGiftId = gift.id)"
+            >
+              <div class="gift-icon">{{ gift.icon }}</div>
+              <div class="gift-info">
+                <span class="gift-name">{{ gift.name }}</span>
+                <span class="gift-desc">{{ gift.description }}</span>
+                <span
+                  v-if="getHintForGift(gift.id)"
+                  class="gift-hint"
+                  :class="getConfidenceClass(getHintForGift(gift.id)!.confidence)"
+                >
+                  {{ getHintForGift(gift.id)!.icon }}
+                  {{ getHintForGift(gift.id)!.hint }}
+                </span>
+              </div>
+              <div class="gift-meta">
+                <span class="gift-price">💰 {{ gift.price }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="budgetWarning" class="budget-warning" :class="budgetWarning.level">
+            {{ budgetWarning.level === 'danger' ? '🚨' : budgetWarning.level === 'caution' ? '⚠️' : '💡' }}
+            {{ budgetWarning.message }}
+          </div>
+
+          <div v-if="todayGiftSpent > 0" class="today-spent">
+            今日已为该角色花费 💰 {{ todayGiftSpent }}
+          </div>
+        </template>
 
         <div class="modal-footer">
           <span class="current-resources">
             当前代币：{{ gameStore.resources }}
+            <span v-if="selectedGiftId" class="remaining-resources">
+              → 送出后：{{ remainingAfterGift }}
+            </span>
           </span>
           <div class="footer-buttons">
             <button class="btn btn-secondary" @click="emit('close')">取消</button>
-            <button 
-              class="btn btn-primary" 
+            <button
+              class="btn btn-primary"
               :disabled="!selectedGiftId || !canAfford || gameStore.actionsRemaining <= 0"
               @click="sendGift"
             >
@@ -155,6 +287,128 @@ function sendGift() {
 
 .target-name {
   font-weight: 500;
+  flex: 1;
+}
+
+.trend-toggle {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-light);
+}
+
+.trend-toggle:hover {
+  background: var(--accent-light);
+  color: var(--accent-primary);
+}
+
+.trend-panel {
+  padding: 14px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+}
+
+.trend-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.trend-label {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.trend-count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.trend-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 60px;
+  padding: 0 4px;
+  margin-bottom: 12px;
+}
+
+.trend-bar-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+}
+
+.trend-bar-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+}
+
+.trend-bar {
+  width: 100%;
+  min-height: 4px;
+  border-radius: 3px 3px 0 0;
+  transition: height 0.3s;
+}
+
+.trend-bar.positive {
+  background: linear-gradient(to top, #86efac, #22c55e);
+}
+
+.trend-bar.negative {
+  background: linear-gradient(to top, #fca5a5, #ef4444);
+}
+
+.trend-bar-day {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.trend-history {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trend-history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+.history-day {
+  color: var(--text-muted);
+  min-width: 50px;
+}
+
+.history-delta {
+  font-weight: 600;
+  min-width: 40px;
+}
+
+.history-delta.positive {
+  color: #22c55e;
+}
+
+.history-delta.negative {
+  color: #ef4444;
+}
+
+.history-affinity {
+  color: var(--text-secondary);
 }
 
 .gift-grid {
@@ -212,8 +466,45 @@ function sendGift() {
 }
 
 .gift-desc {
+  display: block;
   font-size: 12px;
   color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.gift-hint {
+  display: block;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.gift-hint.confidence-high {
+  background: #dcfce7;
+  color: #166534;
+}
+
+[data-theme='dark'] .gift-hint.confidence-high {
+  background: #14532d;
+  color: #86efac;
+}
+
+.gift-hint.confidence-medium {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+[data-theme='dark'] .gift-hint.confidence-medium {
+  background: #451a03;
+  color: #fbbf24;
+}
+
+.gift-hint.confidence-low {
+  background: var(--bg-secondary);
+  color: var(--text-muted);
 }
 
 .gift-meta {
@@ -230,32 +521,51 @@ function sendGift() {
   font-size: 14px;
 }
 
-.gift-status {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: var(--bg-secondary);
-  color: var(--text-muted);
+.budget-warning {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
-.gift-status.status-liked {
-  background: #dcfce7;
-  color: #166534;
-}
-
-[data-theme='dark'] .gift-status.status-liked {
-  background: #14532d;
-  color: #86efac;
-}
-
-.gift-status.status-disliked {
+.budget-warning.danger {
   background: #fee2e2;
   color: #991b1b;
 }
 
-[data-theme='dark'] .gift-status.status-disliked {
+[data-theme='dark'] .budget-warning.danger {
   background: #7f1d1d;
   color: #fca5a5;
+}
+
+.budget-warning.caution {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+[data-theme='dark'] .budget-warning.caution {
+  background: #451a03;
+  color: #fbbf24;
+}
+
+.budget-warning.safe {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+[data-theme='dark'] .budget-warning.safe {
+  background: #1e3a5f;
+  color: #93c5fd;
+}
+
+.today-spent {
+  margin-top: 8px;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
 }
 
 .modal-footer {
@@ -270,6 +580,12 @@ function sendGift() {
 .current-resources {
   font-size: 14px;
   color: var(--text-secondary);
+}
+
+.remaining-resources {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: 4px;
 }
 
 .footer-buttons {
