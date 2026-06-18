@@ -26,8 +26,24 @@ watch(() => gameStore.day, () => {
   saveStore.autoSave()
 })
 
+watch(() => gameStore.giftHistory.length, () => {
+  saveStore.autoSave()
+})
+
+watch(() => gameStore.logs.length, () => {
+  saveStore.autoSave()
+})
+
 watch(theme, (newTheme) => {
   document.documentElement.setAttribute('data-theme', newTheme)
+})
+
+watch(showGiftModal, (newVal, oldVal) => {
+  if (oldVal === true && newVal === false) {
+    setTimeout(() => {
+      gameStore.checkAndTriggerEvent()
+    }, 350)
+  }
 })
 
 onMounted(() => {

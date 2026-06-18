@@ -168,14 +168,16 @@ export const useGameStore = defineStore('game', () => {
     char.mood = clamp(char.mood + change, gameConfig.minMood, gameConfig.maxMood)
   }
 
-  function advanceTime() {
+  function advanceTime(skipEventCheck = false) {
     const nextSlot = getNextTimeSlot(timeSlot.value, gameConfig.timeSlots)
     if (nextSlot === gameConfig.timeSlots[0]) {
       nextDay()
     } else {
       timeSlot.value = nextSlot
     }
-    checkAndTriggerEvent()
+    if (!skipEventCheck) {
+      checkAndTriggerEvent()
+    }
   }
 
   function nextDay() {
@@ -201,7 +203,7 @@ export const useGameStore = defineStore('game', () => {
     addLog('system', `🌅 第 ${day.value} 天开始了`)
   }
 
-  function performAction(actionType: ActionType, targetId?: string, giftId?: string) {
+  function performAction(actionType: ActionType, targetId?: string, giftId?: string, skipEventCheck = false) {
     if (actionsRemaining.value <= 0) {
       addLog('system', '⚠️ 今天的行动次数已用完')
       return false
@@ -220,17 +222,17 @@ export const useGameStore = defineStore('game', () => {
 
     switch (actionType) {
       case 'chat':
-        return performChat(targetId!)
+        return performChat(targetId!, skipEventCheck)
       case 'gift':
-        return performGift(targetId!, giftId!)
+        return performGift(targetId!, giftId!, skipEventCheck)
       case 'work':
-        return performWork()
+        return performWork(skipEventCheck)
       default:
         return false
     }
   }
 
-  function performChat(characterId: string): boolean {
+  function performChat(characterId: string, skipEventCheck = false): boolean {
     const charState = getCharacterState(characterId)
     const charConfig = gameConfig.characters.find(c => c.id === characterId)
     if (!charState || !charConfig || !charState.unlocked) return false
@@ -261,11 +263,11 @@ export const useGameStore = defineStore('game', () => {
     }
 
     addLog('action', message, characterId)
-    advanceTime()
+    advanceTime(skipEventCheck)
     return true
   }
 
-  function performGift(characterId: string, giftId: string): boolean {
+  function performGift(characterId: string, giftId: string, skipEventCheck = false): boolean {
     const charState = getCharacterState(characterId)
     const charConfig = gameConfig.characters.find(c => c.id === characterId)
     const giftConfig = gameConfig.gifts.find(g => g.id === giftId)
@@ -316,11 +318,11 @@ export const useGameStore = defineStore('game', () => {
     }
 
     addLog('action', message, characterId)
-    advanceTime()
+    advanceTime(skipEventCheck)
     return true
   }
 
-  function performWork(): boolean {
+  function performWork(skipEventCheck = false): boolean {
     const { min, max } = gameConfig.workRewards
     const earned = randomInt(min, max)
     resources.value += earned
@@ -332,7 +334,7 @@ export const useGameStore = defineStore('game', () => {
     })
 
     addLog('action', `💼 打工赚了 ${earned} 代币（角色们的心情略有下降）`)
-    advanceTime()
+    advanceTime(skipEventCheck)
     return true
   }
 

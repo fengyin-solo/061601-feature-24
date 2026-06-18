@@ -19,6 +19,7 @@ const emit = defineEmits<{
 const gameStore = useGameStore()
 const selectedGiftId = ref<string | null>(null)
 const showTrendPanel = ref(false)
+const giftSent = ref(false)
 
 const currentCharacterConfig = computed(() => gameStore.currentCharacterConfig)
 
@@ -93,8 +94,15 @@ function getTrendBarWidth(delta: number): string {
 
 function sendGift() {
   if (!selectedGiftId.value || !gameStore.selectedCharacterId) return
-  gameStore.performAction('gift', gameStore.selectedCharacterId, selectedGiftId.value)
-  showTrendPanel.value = true
+  const success = gameStore.performAction('gift', gameStore.selectedCharacterId, selectedGiftId.value, true)
+  if (success) {
+    giftSent.value = true
+    showTrendPanel.value = true
+  }
+}
+
+function finishAndClose() {
+  emit('close')
 }
 </script>
 
@@ -177,8 +185,8 @@ function sendGift() {
               v-for="gift in gameConfig.gifts"
               :key="gift.id"
               class="gift-item"
-              :class="{ selected: selectedGiftId === gift.id, disabled: gameStore.resources < gift.price }"
-              @click="gameStore.resources >= gift.price && (selectedGiftId = gift.id)"
+              :class="{ selected: selectedGiftId === gift.id, disabled: giftSent || gameStore.resources < gift.price }"
+              @click="!giftSent && gameStore.resources >= gift.price && (selectedGiftId = gift.id)"
             >
               <div class="gift-icon">{{ gift.icon }}</div>
               <div class="gift-info">
@@ -212,18 +220,28 @@ function sendGift() {
         <div class="modal-footer">
           <span class="current-resources">
             当前代币：{{ gameStore.resources }}
-            <span v-if="selectedGiftId" class="remaining-resources">
+            <span v-if="selectedGiftId && !giftSent" class="remaining-resources">
               → 送出后：{{ remainingAfterGift }}
             </span>
           </span>
           <div class="footer-buttons">
-            <button class="btn btn-secondary" @click="emit('close')">取消</button>
+            <button class="btn btn-secondary" @click="giftSent ? emit('close') : emit('close')">
+              {{ giftSent ? '跳过' : '取消' }}
+            </button>
             <button
+              v-if="!giftSent"
               class="btn btn-primary"
               :disabled="!selectedGiftId || !canAfford || gameStore.actionsRemaining <= 0"
               @click="sendGift"
             >
               送出
+            </button>
+            <button
+              v-else
+              class="btn btn-primary"
+              @click="finishAndClose"
+            >
+              完成 ✓
             </button>
           </div>
         </div>
